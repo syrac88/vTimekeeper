@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VTimekeeper – Shared Agenda Timer for Teams</title>
+  <meta name="description" content="Create and share live presentation timers that sync across all participants. Ideal for meetings, agendas, and team presentations.">
+  <meta name="keywords" content="timer, shared timer, presentation timer, agenda, meeting, countdown, team tools, vtimekeeper">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://syrac.lima-city.de/vtimekeeper/">
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0b0f14;
+      color: #eee;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    h2 {
+      text-align: center;
+      margin-top: 0;
+      font-weight: normal;
+      color: #ccc;
+    }
+    .timer {
+      background: #121821;
+      border: 2px solid #1e2734;
+      border-radius: 12px;
+      padding: 15px;
+      margin: 10px 0;
+      transition: border-color 0.3s ease;
+    }
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .title {
+      font-weight: bold;
+      font-size: 18px;
+      flex: 1;
+      padding-right: 10px;
+    }
+    .duration {
+      font-size: 14px;
+      color: #aaa;
+      flex-shrink: 0;
+    }
+    .time {
+      font-size: 22px;
+      font-variant-numeric: tabular-nums;
+    }
+    .done {
+      opacity: 0.6;
+    }
+
+    .active .title,
+    .active .time {
+      color: #eee !important;
+      font-size: 24px;
+      font-weight: bold;
+    }
+
+    .progress {
+      height: 8px;
+      border-radius: 4px;
+      margin-top: 10px;
+      background: #333;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: green;
+      transition: width 1s linear, background-color 0.5s linear;
+    }
+
+    @keyframes blinkRed {
+      0%   { border-color: red; }
+      50%  { border-color: #1e2734; }
+      100% { border-color: red; }
+    }
+    .blinking {
+      animation: blinkRed 1s step-start infinite;
+    }
+
+    #viewerCount {
+      text-align: center;
+      color: #888;
+      margin-top: 30px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1 id="presTitle">VTimekeeper</h1>
+  <h2 id="presSubtitle"></h2>
+  <div id="timers"></div>
+
+  <div id="viewerCount">👥 Loading viewers...</div>
+
+  <script>
+    const agendaId = new URLSearchParams(window.location.search).get("id");
+
+    async function loadAgenda() {
+      if (!agendaId) {
+        document.getElementById("timers").textContent = "❌ No agenda id provided (?id=...)";
+        return null;
+      }
+      try {
+        const res = await fetch(`get_agenda.php?id=${agendaId}`);
+        if (!res.ok) throw new Error("Agenda not found");
+        return await res.json();
+      } catch (e) {
+        document.getElementById("timers").textContent = "⚠️ Error loading agenda.";
+        console.error(e);
+        return null;
+      }
+    }
+
+    function renderAgenda(title, startTime, slots) {
+      const container = document.getElementById("timers");
+      container.innerHTML = "";
+
+      document.getElementById("presTitle").textContent = title || "Agenda Timer";
+      document.getElementById("presSubtitle").textContent = startTime.toLocaleString();
+
+      slots.forEach((slot, i) => {
+        const el = document.createElement("div");
+        el.className = "timer";
+        el.innerHTML = `
+          <div class="title-row">
+            <div class="title">${slot.title}</div>
+            <div class="duration">${slot.minutes} min</div>
+          </div>
+          <div class="time" id="t${i}"></div>
+          <div class="progress"><div class="progress-bar" id="p${i}"></div></div>
+        `;
+        container.appendChild(el);
+      });
+
+      let times = [];
+      let t = new Date(startTime);
+      slots.forEach(slot => {
+        let end = new Date(t.getTime() + slot.minutes * 60000);
+        times.push({ start: new Date(t), end, title: slot.title, minutes: slot.minutes });
+        t = end;
+      });
+
+      function update() {
+        const now = new Date();
+        times.forEach((slot, i) => {
+          const el = document.getElementById("t"+i);
+          const parent = el.closest(".timer");
+          const bar = document.getElementById("p"+i);
+
+          parent.classList.remove("active", "blinking", "done");
+          parent.style.borderColor = "#1e2734";
+
+          if (now < slot.start) {
+            const diff = Math.round((slot.start - now)/1000);
+            el.textContent = "Starts in " + format(diff);
+            bar.style.width = "0%";
+            bar.style.backgroundColor = "green";
+            el.style.color = "#eee";
+            parent.querySelector(".title").style.color = "#eee";
+          } 
+          else if (now >= slot.start && now < slot.end) {
+            const total = (slot.end - slot.start);
+            const elapsed = (now - slot.start);
+            const remainingSec = Math.round((slot.end - now)/1000);
+            const percent = (elapsed / total) * 100;
+            el.textContent = format(remainingSec);
+            bar.style.width = percent + "%";
+            parent.classList.add("active");
+
+            el.style.color = "#eee";
+            parent.querySelector(".title").style.color = "#eee";
+
+            if (remainingSec <= 5) {
+              bar.style.backgroundColor = "red";
+              parent.classList.add("blinking");
+            } else if (remainingSec <= 60) {
+              bar.style.backgroundColor = "red";
+              parent.style.borderColor = "red";
+            } else if (remainingSec <= 180) {
+              bar.style.backgroundColor = "yellow";
+              parent.style.borderColor = "yellow";
+            } else {
+              bar.style.backgroundColor = "green";
+              parent.style.borderColor = "green";
+            }
+          } 
+          else {
+            el.textContent = "Finished";
+            bar.style.width = "100%";
+            bar.style.backgroundColor = "#333";
+            parent.classList.add("done");
+            el.style.color = "#eee";
+            parent.querySelector(".title").style.color = "#eee";
+          }
+        });
+      }
+
+      function format(sec) {
+        const m = Math.floor(sec/60);
+        const s = sec % 60;
+        return m + ":" + (s<10 ? "0" : "") + s;
+      }
+
+      update();
+      setInterval(update, 1000);
+    }
+
+    async function updateViewers() {
+      if (!agendaId) return;
+      try {
+        const res = await fetch(`track_viewer.php?id=${agendaId}`);
+        const data = await res.json();
+        const count = data.count ?? 0;
+        document.getElementById("viewerCount").textContent =
+          `👥 ${count} Person${count === 1 ? "" : "s"} viewing`;
+      } catch (e) {
+        document.getElementById("viewerCount").textContent = "👥 Viewer count unavailable";
+      }
+    }
+
+    (async () => {
+      const agenda = await loadAgenda();
+      if (agenda) {
+        const startTime = new Date(agenda.startTime);
+        renderAgenda(agenda.title, startTime, agenda.slots);
+        updateViewers();
+        setInterval(updateViewers, 15000);
+      }
+    })();
+  </script>
+</body>
+</html>
