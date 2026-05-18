@@ -8,7 +8,7 @@ A shared presentation timer for teams and events
 VTimekeeper is a simple, shared countdown tool designed for meetings, events, and presentations. Multiple participants can open the same agenda link and watch the timers run in sync.
 
 ### Example Agenda View
-*(Hier kannst du später einen Screenshot oder ein Bild einfügen)*
+![VTimekeeper Screenshot](screenshot.png)
 
 ---
 
